@@ -1,18 +1,35 @@
 python3 -c "
 import json
+import pandas as pd
+import glob
 
+# Get original episodes with their real indices intact
 path = '/home/ubuntu/dreamzero/so101-table-cleanup/meta/episodes.jsonl'
-episodes = [json.loads(l) for l in open(path)]
-valid = [e for e in episodes if e['length'] >= 24]
 
-# Re-index sequentially
-for i, e in enumerate(valid):
-    e['episode_index'] = i
+# Get actual episode indices from parquet files
+parquet_files = glob.glob('/home/ubuntu/dreamzero/so101-table-cleanup/data/**/*.parquet', recursive=True)
+valid_episode_indices = set()
+for pf in parquet_files:
+    df = pd.read_parquet(pf, columns=['episode_index'])
+    valid_episode_indices.update(df['episode_index'].unique().tolist())
 
-print(f'Kept {len(valid)} episodes, re-indexed 0-{len(valid)-1}')
+print(f'Episode indices in parquets: {sorted(valid_episode_indices)[:10]}...')
+
+# Reload original episodes — need the backup or original file
+# Check if backup exists
+import os
+backup = path + '.bak'
+source = backup if os.path.exists(backup) else path
+
+episodes = [json.loads(l) for l in open(source)]
+print(f'Total episodes in file: {len(episodes)}')
+
+# Only keep episodes whose index exists in parquet AND length >= 24
+valid = [e for e in episodes if e['episode_index'] in valid_episode_indices and e['length'] >= 24]
+print(f'Valid episodes after filter: {len(valid)}')
 
 with open(path, 'w') as f:
     for e in valid:
         f.write(json.dumps(e) + '\n')
-print('Done')
+print('Done — episode_index values preserved from original')
 "
