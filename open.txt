@@ -232,6 +232,7 @@ def check_video_files(dataset_path, meta, errors, warnings):
         return
 
     print(f"  Expected video keys: {video_keys}")
+    print(f"  Camera count: {len(video_keys)} (ensure num_views={len(video_keys)} in training script)")
 
     # Check video directories exist
     video_dir = Path(dataset_path) / "videos"
@@ -240,18 +241,27 @@ def check_video_files(dataset_path, meta, errors, warnings):
         return
 
     for vk in video_keys:
-        # Video files are typically stored as chunk-NNN/video_key/
-        chunks = list(video_dir.glob(f"chunk-*/{vk}"))
-        if not chunks:
-            # Try flat structure
-            flat = list(video_dir.glob(f"*/{vk}*"))
-            if not flat:
-                errors.append(f"No video files found for key '{vk}' under videos/")
-            else:
-                print(f"  OK: {vk} — {len(flat)} files found")
-        else:
-            total_vids = sum(len(list(c.glob("*.mp4")) + list(c.glob("*.mkv"))) for c in chunks)
-            print(f"  OK: {vk} — {total_vids} video files across {len(chunks)} chunks")
+        # Try short key first (e.g. 'front'), then original key variants
+        original_key = meta["modality.json"]["video"][vk].get("original_key", vk)
+        candidates = [vk, original_key, original_key.replace(".", "/")]
+
+        found = False
+        for candidate in candidates:
+            chunks = list(video_dir.glob(f"chunk-*/{candidate}"))
+            if chunks:
+                total_vids = sum(len(list(c.glob("*.mp4")) + list(c.glob("*.mkv"))) for c in chunks)
+                print(f"  OK: {vk} (path: {candidate}) — {total_vids} video files across {len(chunks)} chunks")
+                found = True
+                break
+            # Also try flat mp4 directly under chunk
+            flat = list(video_dir.glob(f"chunk-*/{candidate}*.mp4"))
+            if flat:
+                print(f"  OK: {vk} — {len(flat)} video files found")
+                found = True
+                break
+
+        if not found:
+            errors.append(f"No video files found for key '{vk}' (tried: {candidates}) under videos/")
 
 
 def main():
